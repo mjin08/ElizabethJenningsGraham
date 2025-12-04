@@ -1,0 +1,10 @@
+/* App-level basic styles */
+:root{--bg:#f7f7f8}
+html,body,#root{height:100%;margin:0}
+body{background:var(--bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#222}
+
+/* Keep app layout centered */
+.menu-screen, .avatar-screen{max-width:1200px;margin:0 auto;padding:20px}
+
+/* Small utility */
+button{font-family:inherit}

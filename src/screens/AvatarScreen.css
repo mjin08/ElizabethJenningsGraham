@@ -1,0 +1,5 @@
+/* Avatar screen */
+.avatar-screen{display:flex;align-items:center;justify-content:center;height:100vh}
+.video-container{width:900px;max-width:95%;height:auto;border-radius:10px;overflow:hidden}
+.avatar-video{display:block;width:100%;height:auto}
+.loading{padding:60px;text-align:center}

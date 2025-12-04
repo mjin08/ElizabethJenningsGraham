@@ -1,0 +1,158 @@
+/* Global variables */
+:root {
+  --bg: #f4f4f6;
+  --card: #ffffff;
+  --accent: #6b4f4f;
+  --muted: #6b6b6b;
+}
+
+/* Increase global font by ~4pt */
+html { font-size: calc(100% + 4pt); }
+
+/* Reset / base */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: #222;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+
+  /* Use neutral background color site-wide. Menu screen will render the image itself. */
+  background-image: none;
+  background-repeat: no-repeat;
+  background-size: auto;
+  background-position: center;
+  background-attachment: scroll;
+  background-color: #9f9f9f; /* fallback color */
+
+  /* Old photograph style background — darker blotchy look (removed in favor of image)
+     (kept as comment for reference) */
+}
+
+/* Very subtle dark vignette for depth */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.06) 100%);
+}
+
+/* Layout containers */
+.menu-screen {
+  /* make full-bleed layout so text spans full width */
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 25px 33px; /* increased by 5px on both axes */
+  box-sizing: border-box;
+}
+
+.menu-screen header {
+  margin-bottom: 25px; /* +5px */
+}
+
+/* Title (script) */
+.title-script {
+  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  /* responsive, larger title */
+  font-size: clamp(64px, 8vw, 120px);
+  margin: 6px 0;
+  color: var(--accent);
+  font-style: italic;
+  text-align: center;
+}
+
+/* Body / control text — increased by ~4pt (roughly +5px) */
+p,
+.instruction-sub,
+.chat-bubble,
+button,
+.loading {
+  font-size: 29px; /* increased from 24px */
+}
+
+/* Question grid / spacing increases */
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 17px; /* +5px from 12 */
+}
+
+.question-button {
+  background: var(--card);
+  border: 1px solid #eee;
+  padding: 19px; /* +5px from 14 */
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
+}
+
+.question-button:hover {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+/* Avatar / video area */
+.avatar-screen {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fff, #f3f4f6);
+}
+
+.video-container {
+  width: 800px;
+  max-width: 95%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+}
+
+.avatar-video {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+}
+
+.loading {
+  padding: 45px; /* +5px from 40 */
+  color: var(--muted);
+}
+
+/* Ensure player/video areas fill the full viewport height (remove previous max-height limit) */
+.video-container, .video-wrap {
+  width: 100%;
+  height: 100vh; /* full viewport height */
+  max-height: none; /* allow full height */
+  margin: 0;
+}
+
+.avatar-video,
+.video-wrap video {
+  width: 100%;
+  height: 100vh; /* ensure video fills viewport */
+  object-fit: cover;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1000px) {
+  .title-script { font-size: 64px; }
+  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 27px; }
+}
+
+@media (max-width: 600px) {
+  .title-script { font-size: 40px; }
+  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 23px; }
+}
+
+/* Reduce contrast slightly for the vintage look */
+* { box-sizing: border-box }
