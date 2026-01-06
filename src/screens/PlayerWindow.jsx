@@ -5,11 +5,27 @@ import idle1 from '../assets/idle/idle1.mp4';
 import idle2 from '../assets/idle/idle2.mp4';
 import idle3 from '../assets/idle/idle3.mp4';
 import idle4 from '../assets/idle/idle4.mp4';
+import idle5 from '../assets/idle/idle5.mp4';
+import glanceDown from '../assets/idle/glance down.mp4';
+import listening from '../assets/idle/listening.mp4';
 
 // Import only the answer file that was uploaded
 import whoAreYou from '../assets/answers/who_are_you.mp4';
+import familyAns from '../assets/answers/family.mp4';
+import interestsAns from '../assets/answers/interests.mp4';
+import jobAns from '../assets/answers/job.mp4';
+import lifeAns from '../assets/answers/life.mp4';
 
-const idleVideos = [idle1, idle2, idle3, idle4].filter(Boolean);
+const idleVideos = [idle1, idle2, idle3, idle4, idle5, glanceDown, listening].filter(Boolean);
+
+// map question ids to answer files when available
+const answerVideos = {
+  who_are_you: whoAreYou,
+  family: familyAns,
+  interests: interestsAns,
+  job: jobAns,
+  life: lifeAns
+};
 
 export default function PlayerWindow() {
   const videoRef = useRef(null);
@@ -38,6 +54,7 @@ export default function PlayerWindow() {
 
     // Listen for broadcast messages to play answer
     let ch;
+    let storageHandler = null;
     if ('BroadcastChannel' in window) {
       ch = new BroadcastChannel('graham-player-channel');
       ch.onmessage = (ev) => {
@@ -45,11 +62,13 @@ export default function PlayerWindow() {
         if (!data) return;
 
         if (data.type === 'playAnswer' && data.questionId) {
-          // Only play if we have a file for that questionId; otherwise ignore
-          // Currently, only `who_are_you` is available for spoken queries; click-based questionIds are not mapped here.
-          // If you later upload answer files named to match question ids, add them here.
-          console.log('Received playAnswer for', data.questionId);
-          // No mapped click-answer files are present; ignore unknown IDs.
+          const qid = data.questionId;
+          const file = answerVideos[qid];
+          if (file) {
+            playAnswerOnce(file);
+            return;
+          }
+          console.log('Received playAnswer for', qid, 'but no mapped answer file');
         }
 
         if (data.type === 'playAnswerSpoken' && data.text) {
@@ -67,10 +86,15 @@ export default function PlayerWindow() {
       };
     } else {
       // fallback: listen to storage events
-      const storageHandler = (ev) => {
+      storageHandler = (ev) => {
         if (ev.key === 'graham-player-msg' && ev.newValue) {
           try {
             const data = JSON.parse(ev.newValue);
+            if (!data) return;
+            if (data.type === 'playAnswer' && data.questionId) {
+              const file = answerVideos[data.questionId];
+              if (file) playAnswerOnce(file);
+            }
             if (data.type === 'playAnswerSpoken' && data.text) {
               const text = (data.text || '').toLowerCase();
               if (text.includes('who are you')) {
@@ -114,7 +138,7 @@ export default function PlayerWindow() {
       }, 200);
     }
 
-    return () => { mounted = false; if (intervalRef.current) clearInterval(intervalRef.current); if (ch) ch.close(); };
+    return () => { mounted = false; if (intervalRef.current) clearInterval(intervalRef.current); if (ch) ch.close(); if (storageHandler) window.removeEventListener('storage', storageHandler); };
   }, []);
 
   return (

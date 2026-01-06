@@ -164,3 +164,41 @@
   background-position: center;
   background-attachment: fixed;
 }
+
+/* When a question has been answered, make center card text white and larger, left aligned */
+.instruction-card.answered{
+  color: #fff;
+}
+.instruction-card.answered .answer-list{
+  list-style: disc;
+  padding-left: 22px;
+  text-align: left;
+  font-size: calc(1rem + 6px); /* 6px larger than base */
+  color: #000000;
+}
+
+/* Card actions (back button) */
+.card-actions{margin-top:18px;display:flex;justify-content:center;width:100%}
+.back-btn{
+  padding:10px 18px;
+  border-radius:12px;
+  background:#c0bfbf;
+  border:1px solid #b7b7b7;
+  color:#525252;
+  font-size: 1rem;
+  cursor:pointer;
+  box-shadow:0 8px 20px rgba(15,15,15,0.06);
+}
+.back-btn:focus{outline:2px solid rgba(30,144,255,0.18);}
+
+/* Center title styling */
+.center-title{
+  font-weight:700;
+  font-size: calc(1rem + 6px); /* same size as answer text */
+  margin-bottom:12px;
+  color:#000000;
+}
+
+/* Ensure original instruction styles remain neutral when not answered */
+.center-col .instruction-card:not(.answered) .instruction-title{color:#111}
+.center-col .instruction-card:not(.answered) .instruction-sub{color:#555}
