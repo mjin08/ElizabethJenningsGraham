@@ -5,7 +5,7 @@ Overview
 This React prototype implements a two-screen interactive exhibit for Elizabeth Jennings Graham. It includes:
 
 - A Menu screen with a three-column layout of predefined question "chat bubbles" and a centered instruction card with a microphone button.
-- A separate Player Window that runs in its own browser tab and continuously plays random idle video loops until it receives a command to play a specific answer video.
+- A separate Player Window that runs in its ogiwn browser tab and continuously plays random idle video loops until it receives a command to play a specific answer video.
 - Simple voice input: the microphone button on the Menu starts Web Speech recognition and will attempt to map spoken text to a question; certain spoken phrases (e.g. "Who are you?") trigger dedicated answer videos.
 - Inter-window communication using BroadcastChannel (with a localStorage fallback) so the Menu can tell the Player Window which answer to play.
 

@@ -26,15 +26,35 @@
 }
 
 /* Extra spacing under the title so large font doesn't get cut off */
-.menu-header{padding-top:8px;padding-bottom:28px}
-.menu-header .title-script{display:block;padding-bottom:8px}
+.menu-header{padding-top:0px;padding-bottom:12px}
+.menu-header .title-script{display:block;padding-bottom:4px;margin-top:-30px;margin-bottom:-45px}
 
 /* Make columns take more vertical space so bubbles can spread out */
-.columns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;align-items:stretch;min-height:66vh}
+.columns{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:36px; /* larger gap between columns */
+  align-items:stretch;
+  /* use most of the available viewport so bubbles can distribute vertically */
+  height: calc(100vh - 220px);
+  margin-top:15px;
+}
+
+/* Ensure each column stretches and distributes its bubbles evenly */
+.col{
+  display:flex;
+  flex-direction:column;
+  gap:24px; /* larger vertical spacing between bubbles */
+  justify-content:space-between; /* push first and last bubbles to edges */
+  height:100%;
+}
 
 /* Ensure chat bubbles stretch to column width and are spaced evenly down the column */
-.col{display:flex;flex-direction:column;gap:20px;justify-content:space-between;min-height:60vh}
-.col .chat-bubble{width:100%;box-sizing:border-box;flex:0 1 auto}
+.col .chat-bubble{
+  width:100%;
+  box-sizing:border-box;
+  flex:0 0 auto; /* don't grow or shrink; spacing handled by column */
+}
 
 /* Instruction card in center: lighter background with 75% opacity and subtle blur for translucency */
 .center-col .instruction-card{
@@ -146,9 +166,8 @@
 
 /* Responsive tweak: reduce min heights on smaller screens */
 @media (max-width:1000px){
-  .columns{grid-template-columns:1fr;min-height:auto;gap:18px}
-  .col{min-height:auto;justify-content:flex-start}
-  .center-col .instruction-card{height:auto;padding:20px}
+  .columns{grid-template-columns:1fr;height:auto;gap:18px;margin-top:8px}
+  .col{height:auto;gap:16px;justify-content:flex-start}
 }
 
 /* Menu-screen full-page background (only on the menu screen) */
@@ -202,3 +221,6 @@
 /* Ensure original instruction styles remain neutral when not answered */
 .center-col .instruction-card:not(.answered) .instruction-title{color:#111}
 .center-col .instruction-card:not(.answered) .instruction-sub{color:#555}
+
+/* ensure signature image doesn't add extra gap */
+.title-script-img{max-width:100%;height:auto;display:inline-block;margin-bottom:0;margin-top:0}

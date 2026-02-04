@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './MenuScreen.css';
+import signatureBanner from '../assets/signature/EJG signature banner.png';
 
 const leftQuestions = [
   { id: 'important', text: 'Why are you important? What are you remembered for?' },
@@ -219,7 +220,9 @@ export default function MenuScreen() {
   return (
     <div className="menu-screen">
       <header className="menu-header">
-        <h1 className="title-script">Elizabeth Jennings Graham</h1>
+        <h1 className="title-script">
+          <img src={signatureBanner} alt="Elizabeth Jennings Graham" className="title-script-img" />
+        </h1>
       </header>
 
       <main>
@@ -242,7 +245,7 @@ export default function MenuScreen() {
               {centerContent ? (
                 <div className="center-answer">
                   {/* Title with variable topic */}
-                  <div className="center-title">Read More About My {centerTopic}:</div>
+                  <div className="center-title">Read More About My {centerTopic} Here:</div>
                   <ul className="answer-list">
                     {centerContent.map((line, i) => (
                       <li key={i}>{renderHighlighted(line)}</li>
@@ -257,9 +260,6 @@ export default function MenuScreen() {
                 <>
                   <div className="instruction-title">Ask me a question! <strong className="mic" tabIndex={0} onClick={startRecognition}>🎤</strong></div>
                   <div className="instruction-sub">Choose a question or speak your own to hear about my story.</div>
-                  <div style={{marginTop:12}}>
-                    <button className="open-player-btn" onClick={openPlayerWindow}>Open Player Window</button>
-                  </div>
                 </>
               )}
             </div>

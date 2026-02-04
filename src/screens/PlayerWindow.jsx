@@ -1,60 +1,125 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 // Import bundled idle assets (these files exist in the project)
-import idle1 from '../assets/idle/idle1.mp4';
-import idle2 from '../assets/idle/idle2.mp4';
-import idle3 from '../assets/idle/idle3.mp4';
-import idle4 from '../assets/idle/idle4.mp4';
-import idle5 from '../assets/idle/idle5.mp4';
+import idle from '../assets/idle/idle.mp4';
 import glanceDown from '../assets/idle/glance down.mp4';
 import listening from '../assets/idle/listening.mp4';
 
-// Import only the answer file that was uploaded
+// Import answer files
 import whoAreYou from '../assets/answers/who_are_you.mp4';
 import familyAns from '../assets/answers/family.mp4';
 import interestsAns from '../assets/answers/interests.mp4';
 import jobAns from '../assets/answers/job.mp4';
 import lifeAns from '../assets/answers/life.mp4';
 
-const idleVideos = [idle1, idle2, idle3, idle4, idle5, glanceDown, listening].filter(Boolean);
-
-// map question ids to answer files when available
-const answerVideos = {
-  who_are_you: whoAreYou,
-  family: familyAns,
-  interests: interestsAns,
-  job: jobAns,
-  life: lifeAns
-};
+const idleVideos = [idle, glanceDown, listening].filter(Boolean);
+const answerVideos = { who_are_you: whoAreYou, family: familyAns, interests: interestsAns, job: jobAns, life: lifeAns };
 
 export default function PlayerWindow() {
-  const videoRef = useRef(null);
-  const [src, setSrc] = useState(idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '');
+  // two video elements for double-buffered playback
+  const videoRefs = [useRef(null), useRef(null)];
+  const [active, setActive] = useState(0); // which video is currently visible (0 or 1)
+  const [srcs, setSrcs] = useState([
+    idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '',
+    ''
+  ]);
   const intervalRef = useRef(null);
+  const rotationActiveRef = useRef(true);
 
   useEffect(() => {
     let mounted = true;
+    let ch = null;
+    let storageHandler = null;
 
     function startIdleRotation() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (!idleVideos.length) return;
+      rotationActiveRef.current = true;
       intervalRef.current = setInterval(() => {
         if (!mounted) return;
+        if (!rotationActiveRef.current) return;
         const next = idleVideos[Math.floor(Math.random() * idleVideos.length)];
-        setSrc(next);
+        crossfadeTo(next, { loop: true, muted: true });
       }, 7000);
     }
 
     function stopIdleRotation() {
+      rotationActiveRef.current = false;
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     }
 
-    // start rotation
     startIdleRotation();
 
-    // Listen for broadcast messages to play answer
-    let ch;
-    let storageHandler = null;
+    function crossfadeTo(nextSrc, opts = {}) {
+      if (!nextSrc) return;
+      const inactive = 1 - active;
+
+      // set the src on the inactive video element
+      setSrcs((prev) => {
+        const n = [...prev];
+        n[inactive] = nextSrc;
+        return n;
+      });
+
+      const inactiveEl = videoRefs[inactive].current;
+      const activeEl = videoRefs[active].current;
+
+      const onCanPlay = () => {
+        try {
+          if (!inactiveEl) return;
+          inactiveEl.loop = !!opts.loop;
+          inactiveEl.muted = opts.muted === undefined ? inactiveEl.muted : opts.muted;
+          inactiveEl.playsInline = true;
+          const p = inactiveEl.play();
+          if (p && p.catch) p.catch(() => { /* autoplay blocked */ });
+        } catch (e) {}
+
+        // small timeout to ensure play has started before fade
+        setTimeout(() => {
+          setActive(inactive);
+
+          // pause previous after fade completes
+          setTimeout(() => {
+            try { if (activeEl) { activeEl.pause(); } } catch (e) {}
+          }, 360);
+        }, 80);
+
+        inactiveEl.removeEventListener('canplay', onCanPlay);
+      };
+
+      if (inactiveEl) {
+        inactiveEl.addEventListener('canplay', onCanPlay);
+        try { inactiveEl.load(); } catch (e) {}
+        if (inactiveEl.readyState >= 3) onCanPlay();
+      }
+    }
+
+    function playAnswerOnceBySrc(answerSrc) {
+      if (!answerSrc) return;
+      stopIdleRotation();
+      crossfadeTo(answerSrc, { loop: false, muted: false });
+
+      // Attach an ended handler to whichever video becomes active
+      const checkEndedAttach = () => {
+        const cur = videoRefs[active].current;
+        if (!cur) return;
+        const onEnded = () => {
+          setTimeout(() => {
+            if (!mounted) return;
+            const next = idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '';
+            crossfadeTo(next, { loop: true, muted: true });
+            startIdleRotation();
+          }, 800);
+          cur.removeEventListener('ended', onEnded);
+        };
+        cur.addEventListener('ended', onEnded);
+      };
+
+      // Try to attach after a short delay to allow the active index to update
+      setTimeout(checkEndedAttach, 400);
+    }
+
+    // BroadcastChannel and storage handling — respond to playAnswer and playAnswerSpoken
     if ('BroadcastChannel' in window) {
       ch = new BroadcastChannel('graham-player-channel');
       ch.onmessage = (ev) => {
@@ -62,30 +127,23 @@ export default function PlayerWindow() {
         if (!data) return;
 
         if (data.type === 'playAnswer' && data.questionId) {
-          const qid = data.questionId;
-          const file = answerVideos[qid];
+          const file = answerVideos[data.questionId];
           if (file) {
-            playAnswerOnce(file);
+            playAnswerOnceBySrc(file);
             return;
           }
-          console.log('Received playAnswer for', qid, 'but no mapped answer file');
+          console.log('Received playAnswer for', data.questionId, 'but no mapped answer file');
         }
 
         if (data.type === 'playAnswerSpoken' && data.text) {
           const text = (data.text || '').toLowerCase();
           if (text.includes('who are you') || text.includes("who're you") || text.includes("who r u")) {
-            if (whoAreYou) playAnswerOnce(whoAreYou);
+            if (whoAreYou) playAnswerOnceBySrc(whoAreYou);
             return;
           }
-          // fallback: no semantic matching implemented here
-        }
-
-        if (data.type === 'ping') {
-          // no-op: ensure player is awake
         }
       };
     } else {
-      // fallback: listen to storage events
       storageHandler = (ev) => {
         if (ev.key === 'graham-player-msg' && ev.newValue) {
           try {
@@ -93,12 +151,12 @@ export default function PlayerWindow() {
             if (!data) return;
             if (data.type === 'playAnswer' && data.questionId) {
               const file = answerVideos[data.questionId];
-              if (file) playAnswerOnce(file);
+              if (file) playAnswerOnceBySrc(file);
             }
             if (data.type === 'playAnswerSpoken' && data.text) {
               const text = (data.text || '').toLowerCase();
               if (text.includes('who are you')) {
-                if (whoAreYou) playAnswerOnce(whoAreYou);
+                if (whoAreYou) playAnswerOnceBySrc(whoAreYou);
               }
             }
           } catch (e) {}
@@ -107,44 +165,49 @@ export default function PlayerWindow() {
       window.addEventListener('storage', storageHandler);
     }
 
-    function playAnswerOnce(answerSrc) {
-      if (!answerSrc) return;
-      stopIdleRotation();
-
-      // set to answer and ensure it plays once (no loop)
-      setSrc(answerSrc);
-
-      // attach ended handler
-      const onEnded = () => {
-        // resume idle rotation after short delay
-        setTimeout(() => {
-          if (!mounted) return;
-          const next = idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '';
-          setSrc(next);
-          startIdleRotation();
-        }, 800);
-
-        if (videoRef.current) videoRef.current.removeEventListener('ended', onEnded);
-      };
-
-      // ensure handler is attached when video element updates
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.loop = false;
-          videoRef.current.addEventListener('ended', onEnded);
-          const p = videoRef.current.play();
-          if (p && p.catch) p.catch(() => { /* autoplay blocked */ });
-        }
-      }, 200);
-    }
-
-    return () => { mounted = false; if (intervalRef.current) clearInterval(intervalRef.current); if (ch) ch.close(); if (storageHandler) window.removeEventListener('storage', storageHandler); };
-  }, []);
+    return () => {
+      mounted = false;
+      rotationActiveRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (ch) ch.close && ch.close();
+      if (storageHandler) window.removeEventListener('storage', storageHandler);
+    };
+  }, [active]);
 
   return (
-    <div className="video-wrap" style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>
-      {src ? (
-        <video src={src} autoPlay muted={false} ref={videoRef} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+    <div className="video-wrap" style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
+      {srcs[0] || srcs[1] ? (
+        <>
+          <video
+            ref={videoRefs[0]}
+            src={srcs[0]}
+            preload="auto"
+            playsInline
+            muted={true}
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover',
+              transition: 'opacity 320ms ease',
+              opacity: active === 0 ? 1 : 0,
+              zIndex: active === 0 ? 2 : 1
+            }}
+          />
+
+          <video
+            ref={videoRefs[1]}
+            src={srcs[1]}
+            preload="auto"
+            playsInline
+            muted={true}
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover',
+              transition: 'opacity 320ms ease',
+              opacity: active === 1 ? 1 : 0,
+              zIndex: active === 1 ? 2 : 1
+            }}
+          />
+        </>
       ) : (
         <div style={{color:'#fff',padding:20}}>No video available — add idle and answer videos to src/assets/</div>
       )}
