@@ -4,19 +4,19 @@ import './MenuScreen.css';
 import signatureBanner from '../assets/signature/EJG signature banner.png';
 
 const leftQuestions = [
-  { id: 'important', text: 'Why are you important? What are you remembered for?' },
+  { id: 'important', text: 'What are you remembered for?' },
   { id: 'job', text: 'What job did you have?' },
-  { id: 'life', text: 'What was your life like in your times?' },
-  { id: 'family', text: 'Tell me about your family.' },
-  { id: 'interests', text: 'What were your interests?' }
+  { id: 'interests', text: 'What were your interests?' },
+  { id: 'hierarchies', text: 'Describe the social hierarchies in New York in your time.' },
+  { id: 'later_life', text: 'Tell me about your later life.' }
 ];
 
 const rightQuestions = [
-  { id: 'legacy', text: 'What is your legacy?' },
+  { id: 'childhood', text: 'What was your childhood like?' },
+  { id: 'family', text: 'Tell me about your own family.' },
   { id: 'court', text: 'Tell me about your court case.' },
-  { id: 'impact', text: 'How did your experience impact civil rights?' },
-  { id: 'civic', text: 'What civic role did Black Americans play in your times?' },
-  { id: 'suffrage', text: "Were you an advocate for Women's Suffrage?" }
+  { id: 'education', text: 'Tell me the importance of education?' },
+  { id: 'streetcar', text: 'Tell me about the streetcar incident.' }
 ];
 
 // shared broadcast channel name
@@ -42,6 +42,8 @@ export default function MenuScreen() {
       ];
     } else if (centerTopic === 'Importance') {
       phrases = ['LRA (Legal Rights Association)'];
+    } else if (centerTopic === 'Court Case') {
+      phrases = ['ruled in her favor', 'right to ride', 'earliest successful legal challenges'];
     }
     if (phrases.length === 0) return line;
      
@@ -123,9 +125,7 @@ export default function MenuScreen() {
       setCenterContent([
         "Graham’s 1854 streetcar incident was the first case challenging public transportation to go to court.",
         "It received wide attention and helped win her lawsuit, desegregating that specific streetcar company.",
-        "Graham’s streetcar incident led to the LRA (Legal Rights Association).",
-        "The LRA is one of the earliest civil rights groups organized in the U.S., formed after Graham's court case to fight against discrimination.",
-        "The incident was published in major newspapers including Frederick Douglass’s Paper, The New York Times, and The New-York Tribune."
+        "Graham’s streetcar incident led to the LRA (Legal Rights Association), which was one of the earliest civil rights groups organized in the U.S., formed after Graham's court case to fight against discrimination."
       ]);
       setCenterTopic('Importance');
     } else if (id === 'job') {
@@ -151,6 +151,13 @@ export default function MenuScreen() {
         'I later married Charles Graham, and we had a son, though he tragically died young.'
       ]);
       setCenterTopic('Family');
+    } else if (id === 'childhood') {
+      setCenterContent([
+        'Literary circles at a young age, strong public speaking and vocabulary skills acquired.',
+        'Active in many community societies: Church-based organizing groups, Abolitionist circles, literary societies, etc.',
+        'Surrounded by many famous leaders of civil rights (Frederick Douglass, Sojourner Truth, David Ruggles, and Henry Highland Garnet.)'
+      ]);
+      setCenterTopic('Childhood');
     } else if (id === 'interests') {
       setCenterContent([
         'I devoted my life to teaching and establishing schools for Black students.',
@@ -159,12 +166,41 @@ export default function MenuScreen() {
         'I supported efforts to expand literacy, moral instruction, and civil rights in New York City.'
       ]);
       setCenterTopic('Interests');
-    } else {
-      // clear center content for other questions (keeps default instruction view)
-      setCenterContent(null);
-      setCenterTopic(null);
-    }
-  }
+    } else if (id === 'hierarchies') {
+      setCenterContent([
+        'De facto (regardless of law) segregation: In housing, jobs and many aspects of daily life.',
+        '1900: School segregation: Becomes illegal (one year before Graham’s death.)',
+        'NY became a free state on July 4th, 1827, Following the gradual Emancipation Act passed in 1799.',
+        'Slavery remained legal in the Southern and border slave states, until 1865.'
+      ]);
+      setCenterTopic('Social Hierarches');
+    } else if (id === 'education') {
+      setCenterContent([
+        'Early childhood education for Black students is now accessible.',
+        'Operated under the support of Black and White benefactors including Jacob Riis, H. Cordelia Ray, and W.E.B. DuBois.'
+      ]);
+      setCenterTopic('Education');
+    } else if (id === 'streetcar') {
+      setCenterContent([
+        'Private companies lacked government oversight and often refused Black people their right to ride, telling them to wait for the next public train car.',
+        'All streetcars were subject to New York law even when operated by private companies.',
+        'There was no exact New York statute in 1854 that explicitly prohibited race-based exclusion from streetcars, yet there was also no statute that expressly allowed such exclusion.'
+      ]);
+      setCenterTopic('Streetcar Incident');
+    } else if (id === 'court') {
+      setCenterContent([
+        'The court ruled in her favor, awarding damages.',
+        'The common carrier law protected Elizabeth Jennings Graham’s right to ride.',
+        'One of the earliest successful legal challenges to segregated public transportation in the United States.',
+        'Clarified that Black citizens had the legal right to ride public streetcars and black citizens could not legally be removed solely because of their race.'
+      ]);
+      setCenterTopic('Court Case');
+     } else {
+       // clear center content for other questions (keeps default instruction view)
+       setCenterContent(null);
+       setCenterTopic(null);
+     }
+   }
 
   // Simple speech recognition starter for the microphone button
   function startRecognition() {
@@ -179,16 +215,19 @@ export default function MenuScreen() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
+      // console.log({event});
       const text = event.results[0][0].transcript;
       // Basic mapping: try to find a question whose text includes some words from the transcript
       const allQuestions = [...leftQuestions, ...rightQuestions];
+      // console.log({allQuestions});
       const lowered = text.toLowerCase();
       // Find the first question whose text words appear in the spoken text
       let matched = allQuestions.find(q => {
-        const t = q.text.toLowerCase();
+        console.log({q});
+        const questionId = q.id.toLowerCase();
         // check any noun word appears
-        const tokens = t.split(/[^a-zA-Z0-9]+/).filter(Boolean);
-        return tokens.some(tok => lowered.includes(tok) && tok.length > 3);
+        //const tokens = t.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+        return text.includes(questionId);
       });
 
       if (matched) {
@@ -245,7 +284,7 @@ export default function MenuScreen() {
               {centerContent ? (
                 <div className="center-answer">
                   {/* Title with variable topic */}
-                  <div className="center-title">Read More About My {centerTopic} Here:</div>
+                  <div className="center-title">{centerTopic === 'Education' ? 'Read More About Education Here' : `Read More About My ${centerTopic} Here`}</div>
                   <ul className="answer-list">
                     {centerContent.map((line, i) => (
                       <li key={i}>{renderHighlighted(line)}</li>
