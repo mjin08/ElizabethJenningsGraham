@@ -39,15 +39,43 @@ export default function PlayerWindow() {
     idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '',
     ''
   ]);
-  // audio control: start muted so autoplay is allowed; allow user to enable audio by tapping/clicking the player
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const audioEnabledRef = useRef(audioEnabled);
-  // keep ref in sync
-  useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
+  // audio always enabled by default — play with sound when triggered
   const intervalRef = useRef(null);
   const rotationActiveRef = useRef(true);
   // prevent concurrent swaps which can produce double flicker
   const swapInProgressRef = useRef(false);
+
+  // debounce handling for spoken input: wait a short time after the last speech message before acting
+  const lastSpokenTimerRef = useRef(null);
+  const lastSpokenTextRef = useRef('');
+  const SPEECH_DEBOUNCE_MS = 900;
+
+  function scheduleSpokenPlay(text) {
+    if (!text) return;
+    lastSpokenTextRef.current = text;
+    if (lastSpokenTimerRef.current) clearTimeout(lastSpokenTimerRef.current);
+    lastSpokenTimerRef.current = setTimeout(() => {
+      const spoken = (lastSpokenTextRef.current || '').toLowerCase();
+      // handle some common spoken queries (same logic as before)
+      if (spoken.includes('who are you') || spoken.includes("who're you") || spoken.includes('who r u')) {
+        const file = answerVideos['important'] || fallbackAnswer;
+        if (file) { playAnswerOnceBySrc(file); }
+      } else {
+        // If spoken text doesn't match a known topic, play the fallback response
+        if (fallbackAnswer) playAnswerOnceBySrc(fallbackAnswer);
+      }
+      lastSpokenTimerRef.current = null;
+      lastSpokenTextRef.current = '';
+    }, SPEECH_DEBOUNCE_MS);
+  }
+
+  function cancelScheduledSpokenPlay() {
+    if (lastSpokenTimerRef.current) {
+      clearTimeout(lastSpokenTimerRef.current);
+      lastSpokenTimerRef.current = null;
+      lastSpokenTextRef.current = '';
+    }
+  }
 
   // Try to start playback immediately when a source is assigned to the active video.
   useEffect(() => {
@@ -56,7 +84,7 @@ export default function PlayerWindow() {
       try {
         const el = videoRefs[active].current;
         if (el && srcs[active]) {
-          el.muted = true;
+          el.muted = false;
           el.playsInline = true;
           // ensure the element loads the current src
           try { el.load(); } catch (e) {}
@@ -85,7 +113,7 @@ export default function PlayerWindow() {
         if (!mounted) return;
         if (!rotationActiveRef.current) return;
         const next = idleVideos[Math.floor(Math.random() * idleVideos.length)];
-        crossfadeTo(next, { loop: true, muted: true });
+        crossfadeTo(next, { loop: true, muted: false });
       }, 7000);
     }
 
@@ -191,7 +219,7 @@ export default function PlayerWindow() {
         try {
           if (!inactiveEl) return;
           inactiveEl.loop = !!opts.loop;
-          inactiveEl.muted = opts.muted === undefined ? true : opts.muted;
+          inactiveEl.muted = opts.muted === undefined ? false : opts.muted;
           inactiveEl.playsInline = true;
           const p = inactiveEl.play();
           if (p && p.catch) p.catch(() => {});
@@ -265,40 +293,16 @@ export default function PlayerWindow() {
         };
         cur.addEventListener('ended', onEnded);
 
-        // If audio already enabled by a prior user gesture, unmute now
-        if (audioEnabledRef.current) {
-          try {
-            cur.muted = false;
-            try { cur.volume = 1.0; } catch (e) {}
-          } catch (e) {}
-        }
+        // Ensure audio is unmuted so answers play with sound
+        try {
+          cur.muted = false;
+          try { cur.volume = 1.0; } catch (e) {}
+        } catch (e) {}
       };
 
       // Try to attach after a short delay to allow the active index to update
       setTimeout(checkEndedAttach, 400);
     }
-
-    // User gesture handler: clicking/tapping the player enables audio for future plays and unmutes current video
-    const gestureHandler = () => {
-      if (!audioEnabledRef.current) {
-        setAudioEnabled(true);
-        audioEnabledRef.current = true;
-        // unmute the active video and ensure the other is muted to avoid doubled audio
-        try {
-          const cur = videoRefs[active].current;
-          const other = videoRefs[1 - active].current;
-          if (cur) {
-            cur.muted = false;
-            try { cur.volume = 1.0; } catch (e) {}
-            const p = cur.play(); if (p && p.catch) p.catch(() => {});
-          }
-          if (other) {
-            other.muted = true;
-          }
-        } catch (e) {}
-      }
-    };
-    window.addEventListener('click', gestureHandler);
 
     // BroadcastChannel and storage handling — respond to playAnswer and playAnswerSpoken
     if ('BroadcastChannel' in window) {
@@ -317,39 +321,26 @@ export default function PlayerWindow() {
         }
 
         if (data.type === 'playAnswerSpoken' && data.text) {
-          const text = (data.text || '').toLowerCase();
-          // handle some common spoken queries
-          if (text.includes('who are you') || text.includes("who're you") || text.includes("who r u")) {
-            const file = answerVideos['important'] || fallbackAnswer;
-            if (file) { playAnswerOnceBySrc(file); return; }
-          }
-          // If spoken text doesn't match a known topic, play the fallback response
-          if (fallbackAnswer) {
-            playAnswerOnceBySrc(fallbackAnswer);
-          }
-        }
-      };
-    } else {
-      storageHandler = (ev) => {
-        if (ev.key === 'graham-player-msg' && ev.newValue) {
-          try {
-            const data = JSON.parse(ev.newValue);
-            if (!data) return;
-            if (data.type === 'playAnswer' && data.questionId) {
-              const file = answerVideos[data.questionId] || fallbackAnswer;
-              if (file) playAnswerOnceBySrc(file);
-            } else if (data.type === 'playAnswerSpoken' && data.text) {
-              const text = (data.text || '').toLowerCase();
-              if (text.includes('who are you') || text.includes("who're you") || text.includes("who r u")) {
-                const file = answerVideos['important'] || fallbackAnswer;
-                if (file) playAnswerOnceBySrc(file);
-              } else if (fallbackAnswer) {
-                playAnswerOnceBySrc(fallbackAnswer);
-              }
-            }
-          } catch (e) {}
-        }
-      };
+          // Debounce spoken input so we wait until the user finishes speaking before leaving idle
+          scheduleSpokenPlay(data.text);
+         }
+       };
+     } else {
+       storageHandler = (ev) => {
+         if (ev.key === 'graham-player-msg' && ev.newValue) {
+           try {
+             const data = JSON.parse(ev.newValue);
+             if (!data) return;
+             if (data.type === 'playAnswer' && data.questionId) {
+               const file = answerVideos[data.questionId] || fallbackAnswer;
+               if (file) playAnswerOnceBySrc(file);
+             } else if (data.type === 'playAnswerSpoken' && data.text) {
+              // Debounce spoken input via storage messages as well
+              scheduleSpokenPlay(data.text);
+             }
+           } catch (e) {}
+         }
+       };
       window.addEventListener('storage', storageHandler);
     }
 
@@ -359,9 +350,11 @@ export default function PlayerWindow() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (ch) ch.close && ch.close();
       if (storageHandler) window.removeEventListener('storage', storageHandler);
-      window.removeEventListener('click', gestureHandler);
-    };
-  }, [active]);
+      // clear any pending spoken-play debounce timer
+      cancelScheduledSpokenPlay();
+      // no gesture handler to remove
+     };
+   }, [active]);
 
   return (
     <div className="video-wrap" onClick={() => { /* clicking also enables audio via global listener */ }} style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
@@ -372,7 +365,7 @@ export default function PlayerWindow() {
             src={srcs[0]}
             preload="auto"
             playsInline
-            muted={!(audioEnabled && active === 0)}
+            muted={false}
             style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover',
@@ -387,7 +380,7 @@ export default function PlayerWindow() {
             src={srcs[1]}
             preload="auto"
             playsInline
-            muted={!(audioEnabled && active === 1)}
+            muted={false}
             style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover',
@@ -396,10 +389,6 @@ export default function PlayerWindow() {
               zIndex: active === 1 ? 2 : 1
             }}
           />
-         {/* Audio enable hint */}
-         {!audioEnabled && (
-           <div style={{position:'absolute',bottom:20,left:20,padding:'8px 12px',background:'rgba(0,0,0,0.6)',color:'#fff',borderRadius:6,fontSize:14}}>Tap to enable audio</div>
-         )}
         </>
       ) : (
         <div style={{color:'#fff',padding:20}}>No video available — add idle and answer videos to src/assets/</div>

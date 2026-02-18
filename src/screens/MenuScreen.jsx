@@ -31,26 +31,39 @@ export default function MenuScreen() {
 
   // Helper: highlight specific phrases (used for Family answers)
   function renderHighlighted(line) {
-    // determine phrases to bold based on the current center topic
+    // determine phrases to bold based on the current center topic (case-insensitive)
     let phrases = [];
-    if (centerTopic === 'Family') {
+    const lowerTopic = (centerTopic || '').toLowerCase();
+
+    if (lowerTopic === 'family') {
       phrases = [
         'Thomas L. Jennings',
         'Elizabeth Jennings',
         'first Black American to hold a patent',
         'Charles Graham'
       ];
-    } else if (centerTopic === 'Importance') {
-      phrases = ['LRA (Legal Rights Association)'];
-    } else if (centerTopic === 'Court Case') {
+    } else if (lowerTopic === 'importance') {
+      phrases = ['LRA (Legal Rights Association)', '1854 streetcar incident', 'wide attention'];
+    } else if (lowerTopic === 'court case' || lowerTopic === 'courtcase') {
       phrases = ['ruled in her favor', 'right to ride', 'earliest successful legal challenges'];
+    } else if (lowerTopic === 'job') {
+      phrases = ['Teaching', 'church organist', 'African Free Schools'];
+    } else if (lowerTopic === 'interests') {
+      phrases = ['teaching', 'justice', 'equal rights', 'organ', 'church', 'civil rights'];
+    } else if (lowerTopic.includes('social hier') || lowerTopic === 'hierarchies' || lowerTopic === 'social hierarches') {
+      // accept 'Social Hierarchies', 'Social Hierarches', 'hierarchies', etc.
+      phrases = ['De facto', 'school segregation', 'free state', 'Emancipation Act'];
+    } else if (lowerTopic === 'childhood') {
+      phrases = ['Literary circles', 'civil rights'];
+    } else if (lowerTopic === 'education') {
+      phrases = ['Early childhood education', 'accessible', 'Black and White benefactors'];
     }
     if (phrases.length === 0) return line;
      
      const lower = line.toLowerCase();
      let idx = 0;
      const nodes = [];
- 
+
      while (idx < line.length) {
        // find earliest next phrase occurrence
        let nextPos = -1;
@@ -62,21 +75,21 @@ export default function MenuScreen() {
            nextPhrase = p;
          }
        }
- 
+
        if (nextPos === -1) {
          nodes.push(line.slice(idx));
          break;
        }
- 
+
        if (nextPos > idx) {
          nodes.push(line.slice(idx, nextPos));
        }
- 
+
        // push bolded match
        nodes.push(<strong key={idx + '-' + nextPos}>{line.substr(nextPos, nextPhrase.length)}</strong>);
        idx = nextPos + nextPhrase.length;
      }
- 
+
      return nodes;
    }
 
@@ -170,7 +183,7 @@ export default function MenuScreen() {
       setCenterContent([
         'De facto (regardless of law) segregation: In housing, jobs and many aspects of daily life.',
         '1900: School segregation: Becomes illegal (one year before Graham’s death.)',
-        'NY became a free state on July 4th, 1827, Following the gradual Emancipation Act passed in 1799.',
+        'NY became a free state on July 4th, 1827, following the gradual Emancipation Act passed in 1799.',
         'Slavery remained legal in the Southern and border slave states, until 1865.'
       ]);
       setCenterTopic('Social Hierarches');
@@ -284,7 +297,7 @@ export default function MenuScreen() {
               {centerContent ? (
                 <div className="center-answer">
                   {/* Title with variable topic */}
-                  <div className="center-title">{centerTopic === 'Education' ? 'Read More About Education Here' : `Read More About My ${centerTopic} Here`}</div>
+                  <div className="center-title">{(centerTopic || '').toLowerCase() === 'education' ? 'Read More About Education Here' : `Read More About My ${centerTopic} Here`}</div>
                   <ul className="answer-list">
                     {centerContent.map((line, i) => (
                       <li key={i}>{renderHighlighted(line)}</li>
