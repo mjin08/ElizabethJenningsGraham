@@ -1,14 +1,5 @@
 Graham Museum — Local Prototype
 
-<!-- Add a quick-play sample so visitors on GitHub can try the 'Who are you?' answer if the file is present -->
-<p>
-Play the "Who are you?" answer directly (may work on GitHub when the file is present):
-</p>
-
-<video controls width="480" src="src/assets/answers/who_are_you.mp4">Your browser does not support the video tag.</video>
-
-<p><small>If playback does not start on GitHub, you can view or download the file at <code>src/assets/answers/who_are_you.mp4</code> in this repository (or open the raw file link in a new tab).</small></p>
-
 Overview
 
 This React prototype implements a two-screen interactive exhibit for Elizabeth Jennings Graham. It includes:
