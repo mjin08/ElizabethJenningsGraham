@@ -36,12 +36,7 @@ export default function MenuScreen() {
     const lowerTopic = (centerTopic || '').toLowerCase();
 
     if (lowerTopic === 'family') {
-      phrases = [
-        'Thomas L. Jennings',
-        'Elizabeth Jennings',
-        'first Black American to hold a patent',
-        'Charles Graham'
-      ];
+      phrases = ['Thomas L. Jennings', 'Elizabeth Jennings', 'first Black American to hold a patent','Charles Graham'];
     } else if (lowerTopic === 'importance') {
       phrases = ['LRA (Legal Rights Association)', '1854 streetcar incident', 'wide attention'];
     } else if (lowerTopic === 'court case' || lowerTopic === 'courtcase') {
@@ -230,17 +225,23 @@ export default function MenuScreen() {
     recognition.onresult = (event) => {
       // console.log({event});
       const text = event.results[0][0].transcript;
+      const lowered = text.toLowerCase();
+
+      // If the visitor says something like "what are you remembered for" or uses the word remembered,
+      // treat it as the 'important' question.
+      if (lowered.includes('remember') || lowered.includes('remembered')) {
+        askQuestion('important');
+        return;
+      }
+
       // Basic mapping: try to find a question whose text includes some words from the transcript
       const allQuestions = [...leftQuestions, ...rightQuestions];
       // console.log({allQuestions});
-      const lowered = text.toLowerCase();
-      // Find the first question whose text words appear in the spoken text
+      // Find the first question whose id appears in the spoken text
       let matched = allQuestions.find(q => {
         console.log({q});
         const questionId = q.id.toLowerCase();
-        // check any noun word appears
-        //const tokens = t.split(/[^a-zA-Z0-9]+/).filter(Boolean);
-        return text.includes(questionId);
+        return lowered.includes(questionId);
       });
 
       if (matched) {

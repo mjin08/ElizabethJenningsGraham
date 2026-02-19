@@ -44,11 +44,15 @@ export default function PlayerWindow() {
   const rotationActiveRef = useRef(true);
   // prevent concurrent swaps which can produce double flicker
   const swapInProgressRef = useRef(false);
+  // indicate that an answer is currently playing (prevent idle rotation or other swaps)
+  const answerPlayingRef = useRef(false);
 
   // debounce handling for spoken input: wait a short time after the last speech message before acting
   const lastSpokenTimerRef = useRef(null);
   const lastSpokenTextRef = useRef('');
   const SPEECH_DEBOUNCE_MS = 900;
+  // ref to delegate to the in-effect playAnswerOnceBySrc implementation
+  const playAnswerRef = useRef(null);
 
   function scheduleSpokenPlay(text) {
     if (!text) return;
@@ -59,10 +63,10 @@ export default function PlayerWindow() {
       // handle some common spoken queries (same logic as before)
       if (spoken.includes('who are you') || spoken.includes("who're you") || spoken.includes('who r u')) {
         const file = answerVideos['important'] || fallbackAnswer;
-        if (file) { playAnswerOnceBySrc(file); }
+        if (file && playAnswerRef.current) { playAnswerRef.current(file); }
       } else {
         // If spoken text doesn't match a known topic, play the fallback response
-        if (fallbackAnswer) playAnswerOnceBySrc(fallbackAnswer);
+        if (fallbackAnswer && playAnswerRef.current) playAnswerRef.current(fallbackAnswer);
       }
       lastSpokenTimerRef.current = null;
       lastSpokenTextRef.current = '';
@@ -126,9 +130,15 @@ export default function PlayerWindow() {
 
     function crossfadeTo(nextSrc, opts = {}) {
       if (!nextSrc) return;
-      if (swapInProgressRef.current) return; // another swap is running
-      swapInProgressRef.current = true;
-       const inactive = 1 - active;
+      if (swapInProgressRef.current) {
+        // If another swap is in progress, don't fail silently — retry shortly so answers aren't lost
+        if (opts && opts._retryable) {
+          setTimeout(() => crossfadeTo(nextSrc, opts), 80);
+        }
+        return; // another swap is running
+      }
+       swapInProgressRef.current = true;
+        const inactive = 1 - active;
 
       // determine if this is an idle-to-idle rotation; if so we will disable the opacity fade
       const wasIdle = idleVideos.includes(srcs[active]);
@@ -174,6 +184,8 @@ export default function PlayerWindow() {
             } catch (e) {}
             // keep React state consistent
             setActive(inactive);
+            // notify caller which element became active so they can attach events
+            try { if (opts && typeof opts.onSwapComplete === 'function') opts.onSwapComplete(inactiveEl); } catch (e) {}
             // release swap lock
             swapInProgressRef.current = false;
           }, 40);
@@ -201,19 +213,21 @@ export default function PlayerWindow() {
 
           setActive(inactive);
           try { if (activeEl) activeEl.pause(); } catch (e) {}
-          // restore transition styles if we disabled them for an idle swap
-          if (disableFade) {
-            try {
-              if (inactiveEl) inactiveEl.style.transition = 'opacity 320ms ease';
-              if (activeEl) activeEl.style.transition = 'opacity 320ms ease';
-            } catch (e) {}
-          }
-        } catch (e) {}
-        finally {
-          // ensure lock cleared if we reached here
-          swapInProgressRef.current = false;
-        }
-      };
+          // notify caller which element became active so they can attach events
+          try { if (opts && typeof opts.onSwapComplete === 'function') opts.onSwapComplete(inactiveEl); } catch (e) {}
+           // restore transition styles if we disabled them for an idle swap
+           if (disableFade) {
+             try {
+               if (inactiveEl) inactiveEl.style.transition = 'opacity 320ms ease';
+               if (activeEl) activeEl.style.transition = 'opacity 320ms ease';
+             } catch (e) {}
+           }
+         } catch (e) {}
+         finally {
+           // ensure lock cleared if we reached here
+           swapInProgressRef.current = false;
+         }
+       };
 
       const onCanPlay = () => {
         try {
@@ -274,35 +288,44 @@ export default function PlayerWindow() {
 
     function playAnswerOnceBySrc(answerSrc) {
       if (!answerSrc) return;
-      stopIdleRotation();
-      // start answer playback muted so autoplay isn't blocked
-      crossfadeTo(answerSrc, { loop: false, muted: true });
+      // If a swap is already running, retry shortly so we don't silently drop the request
+      if (swapInProgressRef.current) {
+        setTimeout(() => playAnswerOnceBySrc(answerSrc), 120);
+        return;
+      }
 
-      // Attach an ended handler to whichever video becomes active
-      const checkEndedAttach = () => {
-        const cur = videoRefs[active].current;
-        if (!cur) return;
+      stopIdleRotation();
+      // mark that an answer is playing to block other rotations/swaps
+      answerPlayingRef.current = true;
+
+      // Play the answer unmuted by default; provide onSwapComplete so we can attach ended to the actual element
+      crossfadeTo(answerSrc, { loop: false, muted: false, _retryable: true, onSwapComplete: (el) => {
+        if (!el) return;
+        try {
+          // Ensure the element is unmuted and at full volume
+          el.muted = false;
+          try { el.volume = 1.0; } catch (e) {}
+        } catch (e) {}
+
+        // Attach ended handler to this exact element so we wait for the real end
         const onEnded = () => {
+          try { el.removeEventListener('ended', onEnded); } catch (e) {}
+          // After the answer truly finishes, return to idle (give a small breathe)
           setTimeout(() => {
             if (!mounted) return;
+            answerPlayingRef.current = false;
             const next = idleVideos.length ? idleVideos[Math.floor(Math.random() * idleVideos.length)] : '';
-            crossfadeTo(next, { loop: true, muted: true });
+            crossfadeTo(next, { loop: true, muted: false, _retryable: true });
             startIdleRotation();
-          }, 800);
-          cur.removeEventListener('ended', onEnded);
+          }, 220);
         };
-        cur.addEventListener('ended', onEnded);
 
-        // Ensure audio is unmuted so answers play with sound
-        try {
-          cur.muted = false;
-          try { cur.volume = 1.0; } catch (e) {}
-        } catch (e) {}
-      };
+        el.addEventListener('ended', onEnded);
+      }});
+     }
 
-      // Try to attach after a short delay to allow the active index to update
-      setTimeout(checkEndedAttach, 400);
-    }
+    // expose the in-effect implementation to the outer scope via ref so scheduleSpokenPlay can call it
+    playAnswerRef.current = playAnswerOnceBySrc;
 
     // BroadcastChannel and storage handling — respond to playAnswer and playAnswerSpoken
     if ('BroadcastChannel' in window) {
@@ -323,24 +346,24 @@ export default function PlayerWindow() {
         if (data.type === 'playAnswerSpoken' && data.text) {
           // Debounce spoken input so we wait until the user finishes speaking before leaving idle
           scheduleSpokenPlay(data.text);
-         }
-       };
-     } else {
-       storageHandler = (ev) => {
-         if (ev.key === 'graham-player-msg' && ev.newValue) {
-           try {
-             const data = JSON.parse(ev.newValue);
-             if (!data) return;
-             if (data.type === 'playAnswer' && data.questionId) {
-               const file = answerVideos[data.questionId] || fallbackAnswer;
-               if (file) playAnswerOnceBySrc(file);
-             } else if (data.type === 'playAnswerSpoken' && data.text) {
+        }
+      };
+    } else {
+      storageHandler = (ev) => {
+        if (ev.key === 'graham-player-msg' && ev.newValue) {
+          try {
+            const data = JSON.parse(ev.newValue);
+            if (!data) return;
+            if (data.type === 'playAnswer' && data.questionId) {
+              const file = answerVideos[data.questionId] || fallbackAnswer;
+              if (file) playAnswerOnceBySrc(file);
+            } else if (data.type === 'playAnswerSpoken' && data.text) {
               // Debounce spoken input via storage messages as well
               scheduleSpokenPlay(data.text);
-             }
-           } catch (e) {}
-         }
-       };
+            }
+          } catch (e) {}
+        }
+      };
       window.addEventListener('storage', storageHandler);
     }
 
@@ -352,9 +375,11 @@ export default function PlayerWindow() {
       if (storageHandler) window.removeEventListener('storage', storageHandler);
       // clear any pending spoken-play debounce timer
       cancelScheduledSpokenPlay();
+      // clear delegated ref
+      playAnswerRef.current = null;
       // no gesture handler to remove
-     };
-   }, [active]);
+    };
+  }, [active]);
 
   return (
     <div className="video-wrap" onClick={() => { /* clicking also enables audio via global listener */ }} style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
