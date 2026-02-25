@@ -4,19 +4,19 @@ import './MenuScreen.css';
 import signatureBanner from '../assets/signature/EJG signature banner.png';
 
 const leftQuestions = [
-  { id: 'important', text: 'What are you remembered for?' },
-  { id: 'job', text: 'What job did you have?' },
-  { id: 'interests', text: 'What were your interests?' },
-  { id: 'hierarchies', text: 'Describe the social hierarchies in New York in your time.' },
-  { id: 'later_life', text: 'Tell me about your later life.' }
+  { ids: ['important', 'legacy', 'remembered'], text: 'What are you remembered for?' },
+  { ids: ['job'], text: 'What job did you have?' },
+  { ids: ['interests'], text: 'What were your interests?' },
+  { ids: ['hierarchies'], text: 'Describe the social hierarchies in New York in your time.' },
+  { ids: ['later_life'], text: 'Tell me about your later life.' }
 ];
 
 const rightQuestions = [
-  { id: 'childhood', text: 'What was your childhood like?' },
-  { id: 'family', text: 'Tell me about your own family.' },
-  { id: 'court', text: 'Tell me about your court case.' },
-  { id: 'education', text: 'Tell me the importance of education?' },
-  { id: 'streetcar', text: 'Tell me about the streetcar incident.' }
+  { ids: ['childhood'], text: 'What was your childhood like?' },
+  { ids: ['family'], text: 'Tell me about your own family.' },
+  { ids: ['court'], text: 'Tell me about your court case.' },
+  { ids: ['education'], text: 'Tell me the importance of education?' },
+  { ids: ['streetcar'], text: 'Tell me about the streetcar incident.' }
 ];
 
 // shared broadcast channel name
@@ -113,6 +113,7 @@ export default function MenuScreen() {
   }
 
   function askQuestion(id) {
+    console.log('Asking question', id);
     // broadcast the selected question to the player window
     const payload = { type: 'playAnswer', questionId: id };
     if (channel) {
@@ -219,36 +220,47 @@ export default function MenuScreen() {
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
       // console.log({event});
-      const text = event.results[0][0].transcript;
-      const lowered = text.toLowerCase();
+      const recognizedText = event.results[0][0].transcript.toLowerCase();
+      console.log('Recognized speech:', recognizedText);
+      if(!recognizedText.includes('lizzie') && !recognizedText.includes('lizzy')) return false;
 
-      // If the visitor says something like "what are you remembered for" or uses the word remembered,
-      // treat it as the 'important' question.
-      if (lowered.includes('remember') || lowered.includes('remembered')) {
-        askQuestion('important');
-        return;
-      }
+      // // If the visitor says something like "what are you remembered for" or uses the word remembered,
+      // // treat it as the 'important' question.
+      // if (recognizedText.includes('remember') || recognizedText.includes('remembered') || recognizedText.includes('legacy')) {
+      //   askQuestion('important');
+      //   return;
+      // }
 
       // Basic mapping: try to find a question whose text includes some words from the transcript
       const allQuestions = [...leftQuestions, ...rightQuestions];
+      let matchedKeyword;
       // console.log({allQuestions});
       // Find the first question whose id appears in the spoken text
       let matched = allQuestions.find(q => {
         console.log({q});
-        const questionId = q.id.toLowerCase();
-        return lowered.includes(questionId);
+        //const questionId = q.id.toLowerCase();
+        for (const alias of q.ids) {
+          console.log({recognizedText, alias});
+          if (recognizedText.includes(alias.toLowerCase())) {
+            matchedKeyword = alias.toLowerCase();
+            return true;
+          }
+        }
+        // return recognizedText.includes(questionId);
       });
+      // console.log({matched});
 
       if (matched) {
-        askQuestion(matched.id);
+        // console.log('Matched question:', matched);
+        askQuestion(matchedKeyword);
       } else {
         // broadcast free-form speech for the player (player can decide behavior)
-        const payload = { type: 'playAnswerSpoken', text };
+        const payload = { type: 'playAnswerSpoken', recognizedText };
         if (channel) channel.postMessage(payload);
         else {
           localStorage.setItem('graham-player-msg', JSON.stringify(payload));
@@ -283,9 +295,9 @@ export default function MenuScreen() {
           <div className="col left-col">
             {leftQuestions.map(q => (
               <button
-                key={q.id}
+                key={q.ids[0]}
                 className="chat-bubble user-bubble"
-                onClick={() => askQuestion(q.id)}
+                onClick={() => askQuestion(q.ids[0])}
                 aria-label={q.text}
               >
                 {q.text}
@@ -321,9 +333,9 @@ export default function MenuScreen() {
           <div className="col right-col">
             {rightQuestions.map(q => (
               <button
-                key={q.id}
+                key={q.ids[0]}
                 className="chat-bubble user-bubble"
-                onClick={() => askQuestion(q.id)}
+                onClick={() => askQuestion(q.ids[0])}
                 aria-label={q.text}
               >
                 {q.text}
