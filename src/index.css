@@ -6,9 +6,6 @@
   --muted: #6b6b6b;
 }
 
-/* Increase global font by ~4pt */
-html { font-size: calc(100% + 4pt); }
-
 /* Reset / base */
 html, body, #root {
   height: 100%;
@@ -23,16 +20,19 @@ body {
   flex-direction: column;
   min-height: 100vh;
 
-  /* Use neutral background color site-wide. Menu screen will render the image itself. */
-  background-image: none;
-  background-repeat: no-repeat;
-  background-size: auto;
-  background-position: center;
-  background-attachment: scroll;
-  background-color: #9f9f9f; /* fallback color */
+  /* Old photograph style background — darker blotchy look */
+  position: relative;
 
-  /* Old photograph style background — darker blotchy look (removed in favor of image)
-     (kept as comment for reference) */
+  /* layered background: several soft radial blotches over a darker gray base */
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.04) 120px, transparent 320px),
+    radial-gradient(circle at 82% 72%, rgba(0,0,0,0.07) 0px, rgba(0,0,0,0.03) 140px, transparent 360px),
+    radial-gradient(circle at 50% 40%, rgba(255,255,255,0.02) 0px, transparent 220px),
+    linear-gradient(180deg, #b0b0b0 0%, #9f9f9f 50%, #babab9 100%);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+  background-attachment: fixed;
+  background-size: 36% 36%, 40% 40%, 60% 60%, cover;
+  background-color: #9f9f9f; /* darker overall base */
 }
 
 /* Very subtle dark vignette for depth */
@@ -69,13 +69,13 @@ body::after {
   text-align: center;
 }
 
-/* Body / control text — increased by ~4pt (roughly +5px) */
+/* Body / control text — increased by 12px */
 p,
 .instruction-sub,
 .chat-bubble,
 button,
 .loading {
-  font-size: 29px; /* increased from 24px */
+  font-size: 24px; /* unchanged */
 }
 
 /* Question grid / spacing increases */
@@ -128,30 +128,30 @@ button,
   color: var(--muted);
 }
 
-/* Ensure player/video areas fill the full viewport height (remove previous max-height limit) */
-.video-container, .video-wrap {
+/* Ensure video containers are flexible */
+.video-container,
+.video-wrap {
   width: 100%;
-  height: 100vh; /* full viewport height */
-  max-height: none; /* allow full height */
-  margin: 0;
+  height: 100%;
+  max-height: 85vh;
 }
 
 .avatar-video,
 .video-wrap video {
   width: 100%;
-  height: 100vh; /* ensure video fills viewport */
+  height: 100%;
   object-fit: cover;
 }
 
 /* Responsive adjustments */
 @media (max-width: 1000px) {
   .title-script { font-size: 64px; }
-  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 27px; }
+  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 22px; }
 }
 
 @media (max-width: 600px) {
   .title-script { font-size: 40px; }
-  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 23px; }
+  p, .instruction-sub, .chat-bubble, button, .loading { font-size: 18px; }
 }
 
 /* Reduce contrast slightly for the vintage look */
