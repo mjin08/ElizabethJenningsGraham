@@ -4,19 +4,49 @@ import './MenuScreen.css';
 import signatureBanner from '../assets/signature/EJG signature banner.png';
 
 const leftQuestions = [
-  { ids: ['important', 'legacy', 'remembered'], text: 'What are you remembered for, Lizzie?' },
-  { ids: ['job'], text: 'What job did you have, Lizzie?' },
-  { ids: ['interests'], text: 'What were your interests, Lizzie?' },
-  { ids: ['hierarchies'], text: 'Describe the social hierarchies in New York in your time, Lizzie.' },
-  { ids: ['later_life'], text: 'Tell me about your later life, Lizzie.' }
+  { 
+    ids: ['important', 'remembered', 'legacy', 'known for', 'impact', 'significance', 'contribution'], 
+    text: 'What are you remembered for, Lizzie?' 
+  },
+  { 
+    ids: ['job', 'work', 'career', 'profession', 'occupation'], 
+    text: 'What job did you have, Lizzie?' 
+  },
+  { 
+    ids: ['interests', 'hobbies', 'passions'], 
+    text: 'What were your interests, Lizzie?' 
+  },
+  { 
+    ids: ['hierarchies', 'segregation', 'racism', 'social classes', 'discrimination'], 
+    text: 'Describe the social hierarchies in New York in your time, Lizzie.' 
+  },
+  { 
+    ids: ['later life', 'later years', 'retirement'], 
+    text: 'Tell me about your later life, Lizzie.' 
+  }
 ];
 
 const rightQuestions = [
-  { ids: ['childhood'], text: 'What was your childhood like, Lizzie?' },
-  { ids: ['family'], text: 'Tell me about your own family, Lizzie.' },
-  { ids: ['court'], text: 'Tell me about your court case, Lizzie.' },
-  { ids: ['education'], text: 'Tell me the importance of education, Lizzie.' },
-  { ids: ['streetcar'], text: 'Tell me about the streetcar incident, Lizzie.' }
+  { 
+    ids: ['childhood', 'growing up', 'early life', 'as a child'], 
+    text: 'What was your childhood like, Lizzie?' 
+  },
+  { 
+    ids: ['family', 'parents', 'siblings', 'children', 'husband'], 
+    text: 'Tell me about your own family, Lizzie.' 
+  },
+  { 
+    ids: ['court', 'trial', 'lawsuit', 'legal case'], 
+    text: 'Tell me about your court case, Lizzie.' 
+  },
+  { 
+    ids: ['education', 'school', 'teaching', 'students', 'learning'], 
+    text: 'Tell me the importance of education, Lizzie.' 
+  },
+  { 
+    ids: ['streetcar', 'trolley', 'refused seat', 'segregated car', 'train incident'], 
+    text: 'Tell me about the streetcar incident, Lizzie.' 
+  }
 ];
 
 // shared broadcast channel name
