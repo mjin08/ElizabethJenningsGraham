@@ -4,19 +4,19 @@ import './MenuScreen.css';
 import signatureBanner from '../assets/signature/EJG signature banner.png';
 
 const leftQuestions = [
-  { ids: ['important', 'legacy', 'remembered'], text: 'What are you remembered for?' },
-  { ids: ['job'], text: 'What job did you have?' },
-  { ids: ['interests'], text: 'What were your interests?' },
-  { ids: ['hierarchies'], text: 'Describe the social hierarchies in New York in your time.' },
-  { ids: ['later_life'], text: 'Tell me about your later life.' }
+  { ids: ['important', 'legacy', 'remembered'], text: 'What are you remembered for, Lizzie?' },
+  { ids: ['job'], text: 'What job did you have, Lizzie?' },
+  { ids: ['interests'], text: 'What were your interests, Lizzie?' },
+  { ids: ['hierarchies'], text: 'Describe the social hierarchies in New York in your time, Lizzie.' },
+  { ids: ['later_life'], text: 'Tell me about your later life, Lizzie.' }
 ];
 
 const rightQuestions = [
-  { ids: ['childhood'], text: 'What was your childhood like?' },
-  { ids: ['family'], text: 'Tell me about your own family.' },
-  { ids: ['court'], text: 'Tell me about your court case.' },
-  { ids: ['education'], text: 'Tell me the importance of education?' },
-  { ids: ['streetcar'], text: 'Tell me about the streetcar incident.' }
+  { ids: ['childhood'], text: 'What was your childhood like, Lizzie?' },
+  { ids: ['family'], text: 'Tell me about your own family, Lizzie.' },
+  { ids: ['court'], text: 'Tell me about your court case, Lizzie.' },
+  { ids: ['education'], text: 'Tell me the importance of education, Lizzie.' },
+  { ids: ['streetcar'], text: 'Tell me about the streetcar incident, Lizzie.' }
 ];
 
 // shared broadcast channel name
@@ -26,6 +26,7 @@ export default function MenuScreen() {
   const navigate = useNavigate();
   const [playerWindow, setPlayerWindow] = useState(null);
   const [channel, setChannel] = useState(null);
+  const channelRef = React.useRef(null);
   const [centerContent, setCenterContent] = useState(null);
   const [centerTopic, setCenterTopic] = useState(null);
 
@@ -93,6 +94,7 @@ export default function MenuScreen() {
     if ('BroadcastChannel' in window) {
       const ch = new BroadcastChannel(CHANNEL_NAME);
       setChannel(ch);
+      channelRef.current = ch;
       return () => ch.close();
     }
     return undefined;
@@ -106,7 +108,7 @@ export default function MenuScreen() {
       // focus the player tab
       try { w.focus(); } catch (e) { /* ignore */ }
       // send an initial ping to tell player to start idle
-      if (channel) channel.postMessage({ type: 'ping' });
+      if (channelRef.current) channelRef.current.postMessage({ type: 'ping' });
     } else {
       alert('Popup blocked. Please allow popups for this site or open the /player route in a separate tab.');
     }
@@ -116,8 +118,9 @@ export default function MenuScreen() {
     console.log('Asking question', id);
     // broadcast the selected question to the player window
     const payload = { type: 'playAnswer', questionId: id };
-    if (channel) {
-      channel.postMessage(payload);
+    const ch = channelRef.current || channel;
+    if (ch) {
+      ch.postMessage(payload);
     } else {
       // fallback: try using localStorage event
       try {
@@ -212,29 +215,25 @@ export default function MenuScreen() {
    }
 
   // Simple speech recognition starter for the microphone button
-  function startRecognition() {
+  const recognitionRef = React.useRef(null);
+  const recognitionRestartTimerRef = React.useRef(null);
+
+  function createAndStartRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported in this browser. Please use Chrome, Edge, or Safari.");
-      return;
-    }
+    if (!SpeechRecognition) return null;
+    // avoid creating multiple instances
+    if (recognitionRef.current) return recognitionRef.current;
+
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
+    recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    recognition.lang = 'en-US';
 
     recognition.onresult = (event) => {
       // console.log({event});
-      const recognizedText = event.results[0][0].transcript.toLowerCase();
+      const recognizedText = (event.results[event.results.length - 1][0].transcript || '').toLowerCase();
       console.log('Recognized speech:', recognizedText);
       if(!recognizedText.includes('lizzie') && !recognizedText.includes('lizzy')) return false;
-
-      // // If the visitor says something like "what are you remembered for" or uses the word remembered,
-      // // treat it as the 'important' question.
-      // if (recognizedText.includes('remember') || recognizedText.includes('remembered') || recognizedText.includes('legacy')) {
-      //   askQuestion('important');
-      //   return;
-      // }
 
       // Basic mapping: try to find a question whose text includes some words from the transcript
       const allQuestions = [...leftQuestions, ...rightQuestions];
@@ -247,7 +246,8 @@ export default function MenuScreen() {
         for (const alias of q.ids) {
           console.log({recognizedText, alias});
           if (recognizedText.includes(alias.toLowerCase())) {
-            matchedKeyword = alias.toLowerCase();
+            // use the canonical id (first entry) for downstream logic
+            matchedKeyword = q.ids[0].toLowerCase();
             return true;
           }
         }
@@ -260,22 +260,70 @@ export default function MenuScreen() {
         askQuestion(matchedKeyword);
       } else {
         // broadcast free-form speech for the player (player can decide behavior)
-        const payload = { type: 'playAnswerSpoken', recognizedText };
-        if (channel) channel.postMessage(payload);
+        const payload = { type: 'playAnswerSpoken', text: recognizedText };
+        const ch = channelRef.current || channel;
+        if (ch) ch.postMessage(payload);
         else {
-          localStorage.setItem('graham-player-msg', JSON.stringify(payload));
-          localStorage.removeItem('graham-player-msg');
+          try { localStorage.setItem('graham-player-msg', JSON.stringify(payload)); localStorage.removeItem('graham-player-msg'); } catch (e) {}
         }
-      }
+       }
+     };
+
+    recognition.onend = () => {
+      // watchdog to keep recognition alive in kiosk mode
+      console.warn('SpeechRecognition ended — restarting');
+      if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+      recognitionRestartTimerRef.current = setTimeout(() => {
+        try { recognition.start(); } catch (e) { console.error('Failed to restart recognition', e); }
+      }, 250);
     };
 
     recognition.onerror = (e) => {
       console.error('Recognition error', e);
-      alert('Speech recognition error: ' + (e.error || 'unknown'));
+      // restart after brief delay
+      if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+      recognitionRestartTimerRef.current = setTimeout(() => {
+        try { recognition.start(); } catch (err) { console.error('restart failed', err); }
+      }, 500);
     };
 
-    recognition.start();
+    try { recognition.start(); } catch (e) { console.warn('Recognition start deferred', e); }
+    recognitionRef.current = recognition;
+    return recognition;
   }
+
+  function startRecognition() {
+    // Use the shared initializer so the mic can be started via button or automatically on mount
+    const r = createAndStartRecognition();
+    if (!r) alert("Speech recognition not supported in this browser. Please use Chrome, Edge, or Safari.");
+   }
++
+  // Auto-start recognition in kiosk mode (will silently fail on browsers that block automatic mic access)
+  useEffect(() => {
+    // Try to prime the microphone permission (with getUserMedia) — kiosk flags will auto-allow
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+        createAndStartRecognition();
+      }).catch((e) => {
+        // still attempt to create recognition; browser may still allow with flags
+        createAndStartRecognition();
+      });
+    } else {
+      createAndStartRecognition();
+    }
+
+    return () => {
+      // clean up recognition on unmount
+      try {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; recognitionRef.current.onresult = null; } catch (e) {}
+          try { recognitionRef.current.stop(); } catch (e) {}
+          recognitionRef.current = null;
+        }
+        if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+      } catch (e) {}
+    };
+  }, []);
 
   function resetCenter() {
     setCenterContent(null);
@@ -324,7 +372,7 @@ export default function MenuScreen() {
               ) : (
                 <>
                   <div className="instruction-title">Ask me a question! <strong className="mic" tabIndex={0} onClick={startRecognition}>🎤</strong></div>
-                  <div className="instruction-sub">Choose a question or speak your own to hear about my story.</div>
+                  <div className="instruction-sub">Choose a question or speak your own — remember to end your spoken question with the name "Lizzie".</div>
                 </>
               )}
             </div>

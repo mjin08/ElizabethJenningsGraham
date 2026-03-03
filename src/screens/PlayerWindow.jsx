@@ -274,18 +274,6 @@ export default function PlayerWindow() {
       }
     }
 
-    function unmuteActiveVideo() {
-      try {
-        const cur = videoRefs[active].current;
-        if (cur) {
-          cur.muted = false;
-          try { cur.volume = 1.0; } catch (e) {}
-          const p = cur.play();
-          if (p && p.catch) p.catch(() => {});
-        }
-      } catch (e) {}
-    }
-
     function playAnswerOnceBySrc(answerSrc) {
       if (!answerSrc) return;
       // If a swap is already running, retry shortly so we don't silently drop the request
