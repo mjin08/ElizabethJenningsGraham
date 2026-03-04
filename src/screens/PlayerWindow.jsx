@@ -46,8 +46,10 @@ export default function PlayerWindow() {
 
     // State machine variables (not React state — fully deterministic)
     let currentPlayingId = null;
-    let pendingRequestId = null;
+    let currentPlayingSrc = null;
+    let pendingRequest = null; // { id, src, isAnswer }
     let isAnswerPlaying = false;
+    let swapInProgress = false;
 
     // Interval for idle rotation
     let idleTimer = null;
@@ -73,25 +75,38 @@ export default function PlayerWindow() {
       });
     }
 
-    // Safe play with muted fallback
-    // Prevents autoplay rejection crashes
+    // Prefer audible playback. Try multiple times with backoff; only mute as last resort.
     async function safePlay(v) {
-      try {
-        const p = v.play();
-        if (p && p.catch) {
-          p.catch(() => {
-            v.muted = true;
-            v.play().catch(() => {});
-          });
+      // Ensure we try to play with sound first
+      v.muted = false;
+
+      const maxAttempts = 6;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const p = v.play();
+          if (p && p.then) await p; // resolves when playback starts
+          return; // success with sound
+        } catch (err) {
+          // If autoplay was blocked, wait a bit and retry (backoff)
+          await new Promise((r) => setTimeout(r, 120 * attempt));
         }
-      } catch {
+      }
+
+      // Last resort: if playback still doesn't start, attempt muted playback so the player can continue.
+      // Note: to guarantee audible playback in kiosk mode, run Chrome with
+      // --autoplay-policy=no-user-gesture-required or use the provided launchChrome.command.
+      try {
         v.muted = true;
-        v.play().catch(() => {});
+        await v.play();
+        console.warn('Autoplay with sound blocked; playing muted as a last resort. Start browser with --autoplay-policy=no-user-gesture-required to allow sound.');
+      } catch (e) {
+        console.error('Unable to start playback (even muted).', e);
       }
     }
 
     // Make a video visible
     function reveal(el) {
+      if (!el) return;
       el.style.opacity = '1';
       el.style.zIndex = '2';
       el.style.visibility = 'visible';
@@ -99,6 +114,7 @@ export default function PlayerWindow() {
 
     // Hide a video (fade out first, then remove visibility)
     function hide(el) {
+      if (!el) return;
       el.style.opacity = '0';
       el.style.zIndex = '1';
       // Wait for fade transition before hiding completely
@@ -107,12 +123,15 @@ export default function PlayerWindow() {
       }, 360);
     }
 
-    // Core double-buffer swap logic
+    // Core double-buffer swap logic with a simple swap lock
     async function swapTo(inactiveIndex) {
+      if (swapInProgress) return; // safety: another swap is ongoing
+      swapInProgress = true;
+
       const cur = pool[active];         // Currently visible
       const next = pool[inactiveIndex]; // Currently hidden
 
-      // Start playback
+      // Start playback on the hidden element
       await safePlay(next);
       // Wait for first decoded + painted frame
       await waitForFirstFrame(next);
@@ -121,54 +140,100 @@ export default function PlayerWindow() {
 
       // Slight overlap before pausing old video
       setTimeout(() => {
-        cur.pause();
+        if (cur) cur.pause();
         hide(cur);
       }, 120);
 
       // Update active index
       active = inactiveIndex;
+      swapInProgress = false;
+
+      // If there's a queued request that arrived during swap, handle it now
+      if (pendingRequest) {
+        const req = pendingRequest;
+        pendingRequest = null;
+        // If it's different from what's now playing, start it
+        if (req.src !== currentPlayingSrc) {
+          playSrc(req.src, req.id, req.isAnswer).catch(() => {});
+        }
+      }
     }
 
     // Main video play function (answers + idle)
     async function playSrc(src, logicalId, isAnswer) {
+      // Basic dedupe: if the requested src is already the current playing src, ignore
+      if (currentPlayingSrc === src && currentPlayingId === logicalId) {
+        return;
+      }
+
       // If an answer is already playing, queue new request
       if (isAnswer && isAnswerPlaying) {
-        pendingRequestId = logicalId;
+        pendingRequest = { id: logicalId, src, isAnswer };
+        return;
+      }
+
+      // If a swap is in progress, queue the request so it runs after the swap completes
+      if (swapInProgress) {
+        pendingRequest = { id: logicalId, src, isAnswer };
         return;
       }
 
       const inactive = 1 - active;
       const el = pool[inactive];
 
+      if (!el) {
+        console.warn('No video element available for playback');
+        return;
+      }
+
       // Reset previous handlers
       el.onended = null;
+
       // Assign source and restart from beginning
+      el.dataset.src = src;
+      el.dataset.logicalId = logicalId;
       el.src = src;
+      el.muted = false; // ensure unmuted when activated
       el.currentTime = 0;
       el.load();
 
-      // Handle when this video finishes
+      // Handle when this video finishes — guard against stale events
       el.onended = () => {
+        // If this ended event doesn't belong to the currently recorded playing src, ignore it
+        if (currentPlayingSrc !== src) {
+          // stale/duplicate ended event
+          return;
+        }
+
+        // Clear playing flags
         if (isAnswer) isAnswerPlaying = false;
         currentPlayingId = null;
+        currentPlayingSrc = null;
 
-        // If another request came in while playing
-        if (pendingRequestId && pendingRequestId !== logicalId) {
-          const nextId = pendingRequestId;
-          pendingRequestId = null;
-          const mapped = answerVideos[nextId] || fallbackAnswer;
-          playSrc(mapped, nextId, true);
+        // If another request came in while playing, handle it
+        if (pendingRequest) {
+          const nextReq = pendingRequest;
+          pendingRequest = null;
+          const mapped = answerVideos[nextReq.id] || fallbackAnswer;
+          playSrc(mapped, nextReq.id, true).catch(() => {});
           return;
         }
 
         // Otherwise return to idle loop
         const nextIdle =
           idleVideos[Math.floor(Math.random() * idleVideos.length)];
-        playSrc(nextIdle, 'idle', false);
+        playSrc(nextIdle, 'idle', false).catch(() => {});
       };
 
+      // Record current playing
       currentPlayingId = logicalId;
-      if (isAnswer) isAnswerPlaying = true;
+      currentPlayingSrc = src;
+
+      // If this is an answer, stop idle rotation
+      if (isAnswer) {
+        isAnswerPlaying = true;
+        stopIdleLoop();
+      }
 
       // Perform buffer swap
       await swapTo(inactive);
@@ -181,7 +246,9 @@ export default function PlayerWindow() {
         if (isAnswerPlaying) return;
         const next =
           idleVideos[Math.floor(Math.random() * idleVideos.length)];
-        playSrc(next, 'idle', false);
+        // Avoid requesting the same idle that's currently playing
+        if (next === currentPlayingSrc) return;
+        playSrc(next, 'idle', false).catch(() => {});
       }, 7000);
     }
 
@@ -195,7 +262,12 @@ export default function PlayerWindow() {
         idleVideos[Math.floor(Math.random() * idleVideos.length)];
 
       const el = pool[active];
+      if (!el) return;
+
+      el.dataset.src = firstIdle;
+      el.dataset.logicalId = 'idle';
       el.src = firstIdle;
+      el.muted = false; // ensure first video is unmuted
       el.load();
 
       await safePlay(el);
@@ -204,21 +276,25 @@ export default function PlayerWindow() {
       reveal(el);
 
       currentPlayingId = 'idle';
+      currentPlayingSrc = firstIdle;
       isAnswerPlaying = false;
 
       // If idle finishes naturally
       el.onended = () => {
-        if (pendingRequestId) {
-          const req = pendingRequestId;
-          pendingRequestId = null;
-          const mapped = answerVideos[req] || fallbackAnswer;
-          playSrc(mapped, req, true);
+        // Stale guard
+        if (currentPlayingSrc !== firstIdle) return;
+
+        if (pendingRequest) {
+          const req = pendingRequest;
+          pendingRequest = null;
+          const mapped = answerVideos[req.id] || fallbackAnswer;
+          playSrc(mapped, req.id, true).catch(() => {});
           return;
         }
 
         const next =
           idleVideos[Math.floor(Math.random() * idleVideos.length)];
-        playSrc(next, 'idle', false);
+        playSrc(next, 'idle', false).catch(() => {});
       };
 
       startIdleLoop();
@@ -235,10 +311,8 @@ export default function PlayerWindow() {
 
         if (data.type === 'playAnswer' && data.questionId) {
           stopIdleLoop();
-          pendingRequestId = data.questionId;
-          const mapped =
-            answerVideos[data.questionId] || fallbackAnswer;
-          playSrc(mapped, data.questionId, true);
+          pendingRequest = { id: data.questionId, src: answerVideos[data.questionId] || fallbackAnswer, isAnswer: true };
+          playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
         }
 
         if (data.type === 'playAnswerSpoken' && data.text) {
@@ -248,10 +322,11 @@ export default function PlayerWindow() {
             spoken.includes("who're") ||
             spoken.includes('who r')
           ) {
-            pendingRequestId = 'important';
-            playSrc(answerVideos['important'], 'important', true);
+            pendingRequest = { id: 'important', src: answerVideos['important'], isAnswer: true };
+            playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
           } else {
-            playSrc(fallbackAnswer, 'fallback', true);
+            pendingRequest = { id: 'fallback', src: fallbackAnswer, isAnswer: true };
+            playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
           }
         }
       };
