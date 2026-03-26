@@ -39,6 +39,7 @@ export default function PlayerWindow() {
   const v1 = useRef(null);
 
   useEffect(() => {
+    document.title = "Graham Player Window";
     // Pool of video elements (index 0 or 1)
     const pool = [v0.current, v1.current];
     // Index of currently visible video
@@ -300,42 +301,72 @@ export default function PlayerWindow() {
       startIdleLoop();
     })();
 
-    // BroadcastChannel + storage
+    // BroadcastChannel + storage + WebSocket
     let ch = null;
+    let ws = null;
+
+    function handleCommand(data) {
+      if (!data) return;
+
+      if (data.type === 'playAnswer' && data.questionId) {
+        stopIdleLoop();
+        pendingRequest = { id: data.questionId, src: answerVideos[data.questionId] || fallbackAnswer, isAnswer: true };
+        playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
+      }
+
+      if (data.type === 'playAnswerSpoken' && data.text) {
+        const spoken = data.text.toLowerCase();
+        if (
+          spoken.includes('who are you') ||
+          spoken.includes("who're") ||
+          spoken.includes('who r')
+        ) {
+          pendingRequest = { id: 'important', src: answerVideos['important'], isAnswer: true };
+          playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
+        } else {
+          pendingRequest = { id: 'fallback', src: fallbackAnswer, isAnswer: true };
+          playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
+        }
+      }
+    }
 
     if ('BroadcastChannel' in window) {
       ch = new BroadcastChannel('graham-player-channel');
-      ch.onmessage = (ev) => {
-        const data = ev.data;
-        if (!data) return;
+      ch.onmessage = (ev) => handleCommand(ev.data);
+    }
 
-        if (data.type === 'playAnswer' && data.questionId) {
-          stopIdleLoop();
-          pendingRequest = { id: data.questionId, src: answerVideos[data.questionId] || fallbackAnswer, isAnswer: true };
-          playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
-        }
-
-        if (data.type === 'playAnswerSpoken' && data.text) {
-          const spoken = data.text.toLowerCase();
-          if (
-            spoken.includes('who are you') ||
-            spoken.includes("who're") ||
-            spoken.includes('who r')
-          ) {
-            pendingRequest = { id: 'important', src: answerVideos['important'], isAnswer: true };
-            playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
-          } else {
-            pendingRequest = { id: 'fallback', src: fallbackAnswer, isAnswer: true };
-            playSrc(pendingRequest.src, pendingRequest.id, true).catch(() => {});
-          }
+    // WebSocket relay connection
+    function connectSocket() {
+      ws = new WebSocket('ws://localhost:8080');
+      ws.onmessage = (ev) => {
+        console.log('WS message received:', ev.data);
+        try {
+          const data = JSON.parse(ev.data);
+          handleCommand(data);
+        } catch (e) {
+          console.error('Failed to parse WS message', e);
         }
       };
+      ws.onclose = () => {
+        console.warn('WS relay closed. Reconnecting...');
+        setTimeout(connectSocket, 2000);
+      };
+      ws.onerror = (err) => {
+        console.error('WS error', err);
+        ws.close();
+      };
     }
+    
+    connectSocket();
 
     // Cleanup
     return () => {
       clearInterval(idleTimer);
       if (ch) ch.close();
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
     };
   }, []);
 

@@ -51,14 +51,48 @@ const rightQuestions = [
 
 // shared broadcast channel name
 const CHANNEL_NAME = 'graham-player-channel';
+const WS_URL = 'ws://localhost:8080';
 
 export default function MenuScreen() {
   const navigate = useNavigate();
   const [playerWindow, setPlayerWindow] = useState(null);
   const [channel, setChannel] = useState(null);
   const channelRef = React.useRef(null);
+  const socketRef = React.useRef(null);
   const [centerContent, setCenterContent] = useState(null);
   const [centerTopic, setCenterTopic] = useState(null);
+
+  // WebSocket initialization and management
+  useEffect(() => {
+    function connectSocket() {
+      const socket = new WebSocket(WS_URL);
+      
+      socket.onopen = () => {
+        console.log('Connected to WebSocket relay');
+      };
+
+      socket.onclose = () => {
+        console.warn('WebSocket relay disconnected. Reconnecting in 2s...');
+        setTimeout(connectSocket, 2000);
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        socket.close();
+      };
+
+      socketRef.current = socket;
+    }
+
+    connectSocket();
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.onclose = null; // prevent reconnect on unmount
+        socketRef.current.close();
+      }
+    };
+  }, []);
 
   // Helper: highlight specific phrases (used for Family answers)
   function renderHighlighted(line) {
@@ -120,6 +154,7 @@ export default function MenuScreen() {
    }
 
   useEffect(() => {
+    document.title = "Graham Menu Screen";
     // create a BroadcastChannel for sending messages even if player opened separately
     if ('BroadcastChannel' in window) {
       const ch = new BroadcastChannel(CHANNEL_NAME);
@@ -148,11 +183,18 @@ export default function MenuScreen() {
     console.log('Asking question', id);
     // broadcast the selected question to the player window
     const payload = { type: 'playAnswer', questionId: id };
+    
+    // 1. Send via WebSocket (reliable cross-profile)
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(payload));
+    }
+
+    // 2. Fallback to BroadcastChannel (same profile)
     const ch = channelRef.current || channel;
     if (ch) {
       ch.postMessage(payload);
     } else {
-      // fallback: try using localStorage event
+      // 3. Last fallback: try using localStorage event
       try {
         localStorage.setItem('graham-player-msg', JSON.stringify(payload));
         // remove to avoid clutter
@@ -260,10 +302,10 @@ export default function MenuScreen() {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event) => {
-      // console.log({event});
+      console.log({event});
       const recognizedText = (event.results[event.results.length - 1][0].transcript || '').toLowerCase();
       console.log('Recognized speech:', recognizedText);
-      if(!recognizedText.includes('lizzie') && !recognizedText.includes('lizzy')) return false;
+      if(!recognizedText.includes('lizzie') && !recognizedText.includes('lizzy')  && !recognizedText.includes('lucy')) return false;
 
       // Basic mapping: try to find a question whose text includes some words from the transcript
       const allQuestions = [...leftQuestions, ...rightQuestions];
@@ -286,7 +328,7 @@ export default function MenuScreen() {
       // console.log({matched});
 
       if (matched) {
-        // console.log('Matched question:', matched);
+        console.log('Matched question:', matched);
         askQuestion(matchedKeyword);
       } else {
         // broadcast free-form speech for the player (player can decide behavior)
