@@ -18,12 +18,12 @@ const leftQuestions = [
   },
   { 
     ids: ['hierarchies', 'segregation', 'racism', 'social classes', 'discrimination'], 
-    text: 'Describe the social hierarchies in New York in your time, Lizzie.' 
+    text: 'Describe segregation in your time, Lizzie.' 
   },
-  { 
-    ids: ['later life', 'later years', 'retirement'], 
-    text: 'Tell me about your later life, Lizzie.' 
-  }
+  // { 
+  //   ids: ['later life', 'later years', 'retirement'], 
+  //   text: 'Tell me about your later life, Lizzie.' 
+  // }
 ];
 
 const rightQuestions = [
@@ -43,10 +43,10 @@ const rightQuestions = [
     ids: ['education', 'school', 'teaching', 'students', 'learning'], 
     text: 'Tell me the importance of education, Lizzie.' 
   },
-  { 
-    ids: ['streetcar', 'trolley', 'refused seat', 'segregated car', 'train incident'], 
-    text: 'Tell me about the streetcar incident, Lizzie.' 
-  }
+  // { 
+  //   ids: ['streetcar', 'trolley', 'refused seat', 'segregated car', 'train incident'], 
+  //   text: 'Tell me about the streetcar incident, Lizzie.' 
+  // }
 ];
 
 // shared broadcast channel name
@@ -160,6 +160,16 @@ export default function MenuScreen() {
       const ch = new BroadcastChannel(CHANNEL_NAME);
       setChannel(ch);
       channelRef.current = ch;
+      
+      ch.onmessage = (event) => {
+        if (event.data.type === 'answerFinished') {
+          console.log('Answer finished, resuming recognition');
+          isPausedRef.current = false;
+          if (recognitionRef.current) {
+            try { recognitionRef.current.start(); } catch (e) { /* ignore */ }
+          }
+        }
+      };
       return () => ch.close();
     }
     return undefined;
@@ -179,8 +189,25 @@ export default function MenuScreen() {
     }
   }
 
+  const lastQuestionTimeRef = React.useRef(0);
+
   function askQuestion(id) {
+    const now = Date.now();
+    // Ignore fallback if it was triggered within the last 5 seconds to prevent spam
+    if (id === 'fallback' && now - lastQuestionTimeRef.current < 5000) {
+      console.warn('Suppressing redundant fallback trigger');
+      return;
+    }
+    lastQuestionTimeRef.current = now;
+
     console.log('Asking question', id);
+
+    // Pause recognition so ambient speech doesn't trigger while playing answer
+    isPausedRef.current = true;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
+    }
+
     // broadcast the selected question to the player window
     const payload = { type: 'playAnswer', questionId: id };
     
@@ -203,6 +230,20 @@ export default function MenuScreen() {
         console.error('Failed to send message to player', e);
       }
     }
+
+    // --- FAILSAFE: restart recognition if player doesn't reply with answerFinished ---
+    if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+    recognitionRestartTimerRef.current = setTimeout(() => {
+      if (!isPausedRef.current) return;
+      console.warn('No answerFinished received — resuming recognition as a fallback');
+      isPausedRef.current = false;
+      if (recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch (e) { console.warn('resume failed', e); }
+      } else {
+        // If recognition instance was cleared, recreate it
+        try { createAndStartRecognition(); } catch (e) { console.warn('createAndStartRecognition failed', e); }
+      }
+    }, 8000);
 
     // Local UI: show detailed answer in center card for certain questions
     if (id === 'important') {
@@ -264,13 +305,13 @@ export default function MenuScreen() {
         'Operated under the support of Black and White benefactors including Jacob Riis, H. Cordelia Ray, and W.E.B. DuBois.'
       ]);
       setCenterTopic('Education');
-    } else if (id === 'streetcar') {
-      setCenterContent([
-        'Private companies lacked government oversight and often refused Black people their right to ride, telling them to wait for the next public train car.',
-        'All streetcars were subject to New York law even when operated by private companies.',
-        'There was no exact New York statute in 1854 that explicitly prohibited race-based exclusion from streetcars, yet there was also no statute that expressly allowed such exclusion.'
-      ]);
-      setCenterTopic('Streetcar Incident');
+    // } else if (id === 'streetcar') {
+    //   setCenterContent([
+    //     'Private companies lacked government oversight and often refused Black people their right to ride, telling them to wait for the next public train car.',
+    //     'All streetcars were subject to New York law even when operated by private companies.',
+    //     'There was no exact New York statute in 1854 that explicitly prohibited race-based exclusion from streetcars, yet there was also no statute that expressly allowed such exclusion.'
+    //   ]);
+    //   setCenterTopic('Streetcar Incident');
     } else if (id === 'court') {
       setCenterContent([
         'The court ruled in her favor, awarding damages.',
@@ -289,66 +330,104 @@ export default function MenuScreen() {
   // Simple speech recognition starter for the microphone button
   const recognitionRef = React.useRef(null);
   const recognitionRestartTimerRef = React.useRef(null);
+  const isPausedRef = React.useRef(false);
 
   function createAndStartRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return null;
     // avoid creating multiple instances
-    if (recognitionRef.current) return recognitionRef.current;
+    if (recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch (e) { console.log('Already running or cannot start'); }
+        return recognitionRef.current;
+    }
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    recognition.onresult = (event) => {
-      console.log({event});
-      const recognizedText = (event.results[event.results.length - 1][0].transcript || '').toLowerCase();
-      console.log('Recognized speech:', recognizedText);
-      if(!recognizedText.includes('lizzie') && !recognizedText.includes('lizzy')  && !recognizedText.includes('lucy')) return false;
+    let transcriptBuffer = '';
+    let silenceTimer = null;
+    const wakeWords = ['lizzie', 'lizzy', 'lucy'];
 
-      // Basic mapping: try to find a question whose text includes some words from the transcript
+    recognition.onresult = (event) => {
+      clearTimeout(silenceTimer);
+
+      let finalTranscript = '';
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        transcriptBuffer += ' ' + finalTranscript.trim();
+      }
+
+      const currentSpeech = (transcriptBuffer + ' ' + interimTranscript).toLowerCase();
+      setDebugTranscript(currentSpeech);
+      const containsWakeWord = wakeWords.some(name => currentSpeech.includes(name));
+
+      if (!containsWakeWord) {
+         // If user hasn't said the name yet, keep buffering
+         silenceTimer = setTimeout(() => { transcriptBuffer = ''; }, 2000);
+         return false;
+      }
+
+      // If we have a wake word, try to match a question
       const allQuestions = [...leftQuestions, ...rightQuestions];
       let matchedKeyword;
-      // console.log({allQuestions});
-      // Find the first question whose id appears in the spoken text
+      
       let matched = allQuestions.find(q => {
-        console.log({q});
-        //const questionId = q.id.toLowerCase();
         for (const alias of q.ids) {
-          console.log({recognizedText, alias});
-          if (recognizedText.includes(alias.toLowerCase())) {
-            // use the canonical id (first entry) for downstream logic
+          if (currentSpeech.includes(alias.toLowerCase())) {
             matchedKeyword = q.ids[0].toLowerCase();
             return true;
           }
         }
-        // return recognizedText.includes(questionId);
       });
-      // console.log({matched});
 
       if (matched) {
         console.log('Matched question:', matched);
+        isPausedRef.current = true;
+        if (recognitionRef.current) recognitionRef.current.stop();
+        transcriptBuffer = '';
         askQuestion(matchedKeyword);
-      } else {
-        // broadcast free-form speech for the player (player can decide behavior)
-        const payload = { type: 'playAnswerSpoken', text: recognizedText };
-        const ch = channelRef.current || channel;
-        if (ch) ch.postMessage(payload);
-        else {
-          try { localStorage.setItem('graham-player-msg', JSON.stringify(payload)); localStorage.removeItem('graham-player-msg'); } catch (e) {}
-        }
-       }
+      } else if (currentSpeech.includes('lizzie') || currentSpeech.includes('lizzy') || currentSpeech.includes('lucy')) {
+        // If speech mentions name but doesn't match any known question,
+        // instruct the player to play the fallback answer.
+        console.log({currentSpeech});
+        isPausedRef.current = true;
+        if (recognitionRef.current) recognitionRef.current.stop();
+        transcriptBuffer = '';
+        askQuestion('fallback');
+      }
+
+      // If user stops speaking for 3 seconds, clear the buffer
+      silenceTimer = setTimeout(() => { transcriptBuffer = ''; }, 3000);
      };
 
     recognition.onend = () => {
       // watchdog to keep recognition alive in kiosk mode
+      if (isPausedRef.current) {
+        console.log('Recognition paused, not restarting');
+        return;
+      }
       console.warn('SpeechRecognition ended — restarting');
       if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
       recognitionRestartTimerRef.current = setTimeout(() => {
-        try { recognition.start(); } catch (e) { console.error('Failed to restart recognition', e); }
+        try { recognition.start(); } catch (e) { 
+           console.error('Failed to restart recognition', e);
+           // If we failed to restart, force a trigger on next available tick
+           if (!isPausedRef.current) {
+             recognitionRestartTimerRef.current = setTimeout(() => recognition.start(), 1000);
+           }
+        }
       }, 250);
-    };
+    }; 
 
     recognition.onerror = (e) => {
       console.error('Recognition error', e);
@@ -402,8 +481,22 @@ export default function MenuScreen() {
     setCenterTopic(null);
   }
 
+  const [showTranscript, setShowTranscript] = React.useState(false);
+  const [debugTranscript, setDebugTranscript] = React.useState('');
+
+  // Inside createAndStartRecognition, ensure recognition.onresult updates debugTranscript
+  // (already in MenuScreen.jsx, updating the inner logic as needed)
+  
+  // (Updating JSX return at the end of the file)
   return (
     <div className="menu-screen">
+      {/* Debug panel disabled */}
+      {/*
+      <div className="debug-panel" style={{position: 'fixed', bottom: 10, right: 10, zIndex: 1000, background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', fontSize: '12px'}}>
+        <button onClick={() => setShowTranscript(!showTranscript)}>Toggle Debug Transcript</button>
+        {showTranscript && <div style={{marginTop: '5px', maxWidth: '300px', wordWrap: 'break-word'}}>{debugTranscript}</div>}
+      </div>
+      */}
       <header className="menu-header">
         <h1 className="title-script">
           <img src={signatureBanner} alt="Elizabeth Jennings Graham" className="title-script-img" />

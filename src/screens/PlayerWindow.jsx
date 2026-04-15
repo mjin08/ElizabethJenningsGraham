@@ -207,7 +207,15 @@ export default function PlayerWindow() {
         }
 
         // Clear playing flags
-        if (isAnswer) isAnswerPlaying = false;
+        if (isAnswer) {
+          isAnswerPlaying = false;
+          // Notify MenuScreen that answer finished
+          if (window.BroadcastChannel) {
+             const ch = new BroadcastChannel('graham-channel');
+             ch.postMessage({ type: 'answerFinished' });
+             ch.close();
+          }
+        }
         currentPlayingId = null;
         currentPlayingSrc = null;
 
